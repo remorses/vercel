@@ -50,7 +50,7 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
     return await handle(req, res);
   }
   const hot = alreadyRan;
-
+  const type = hot ? 'hot' : 'cold';
   if (alreadyRan) {
     for (const k of Object.keys(require.cache)) {
       delete require.cache[k];
@@ -63,6 +63,7 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
   if (req?.url?.includes('vercel-profile-require')) {
     createShim();
     const { Writable } = require('stream');
+    console.time(`${type} start`);
     await handle(
       req,
       new ServerResponse(
@@ -75,9 +76,9 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
         })
       )
     );
-    const filename = `${pageName}-${
-      hot ? 'hot' : 'cold'
-    }-require-time.cpuprofile`;
+    console.timeEnd(`${type} start`);
+
+    const filename = `${pageName}-${type}-require-time.cpuprofile`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', 'application/json');
     const profileData = JSON.stringify(events);
@@ -95,8 +96,8 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
       // Start profiling
       session.post('Profiler.start', async () => {
         // Run your Node.js program or perform the operations you want to profile
-        console.time('cold start');
         const { Writable } = require('stream');
+        console.time(`${type} start`);
 
         await handle(
           req,
@@ -110,7 +111,7 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
             })
           )
         );
-        console.timeEnd('cold start');
+        console.timeEnd(`${type} start`);
         // Stop profiling
         session.post(
           'Profiler.stop',
