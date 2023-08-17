@@ -82,6 +82,7 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
     const profileData = JSON.stringify(events);
     events.length = 0;
     res.end(profileData);
+    return;
   }
 
   const inspector = require('inspector');
