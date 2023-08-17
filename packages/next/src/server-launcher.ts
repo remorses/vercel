@@ -49,6 +49,7 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
   if (!req?.url?.includes('vercel-profile')) {
     return await handle(req, res);
   }
+  const hot = alreadyRan;
 
   if (alreadyRan) {
     for (const k of Object.keys(require.cache)) {
@@ -75,7 +76,7 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
       )
     );
     const filename = `${pageName}-${
-      alreadyRan ? 'hot' : 'cold'
+      hot ? 'hot' : 'cold'
     }-require-time.cpuprofile`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', 'application/json');
@@ -88,6 +89,7 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
   const inspector = require('inspector');
   const session = new inspector.Session();
   session.connect();
+
   await new Promise((resolve, reject) => {
     session.post('Profiler.enable', () => {
       // Start profiling
@@ -124,7 +126,7 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
             session.disconnect();
 
             const filename = `${pageName}-${
-              alreadyRan ? 'hot' : 'cold'
+              hot ? 'hot' : 'cold'
             }-start.cpuprofile`;
             res.setHeader(
               'Content-Disposition',
