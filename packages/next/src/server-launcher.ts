@@ -50,6 +50,12 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
     return handle(req, res);
   }
 
+  if (alreadyRan) {
+    for (const k of Object.keys(require.cache)) {
+      delete require.cache[k];
+    }
+  }
+
   const inspector = require('inspector');
   const session = new inspector.Session();
   session.connect();
