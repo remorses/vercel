@@ -47,13 +47,38 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
   }
 
   if (!req?.url?.includes('vercel-profile')) {
-    return handle(req, res);
+    return await handle(req, res);
   }
 
   if (alreadyRan) {
     for (const k of Object.keys(require.cache)) {
       delete require.cache[k];
     }
+  }
+  const pageName = req?.url?.replace(/\?.*/, '').split('/').join('-') || 'page';
+
+  if (req?.url?.includes('vercel-profile-require')) {
+    createShim();
+    const { Writable } = require('stream');
+    await handle(
+      req,
+      new ServerResponse(
+        new Writable({
+          // @ts-ignore
+          write(chunk, encoding, callback) {
+            // Discard the data
+            callback();
+          },
+        })
+      )
+    );
+    const filename = `${pageName}-${
+      alreadyRan ? 'hot' : 'cold'
+    }-require-time.cpuprofile`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/json');
+    const profileData = JSON.stringify(events);
+    res.end(profileData);
   }
 
   const inspector = require('inspector');
@@ -93,10 +118,9 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
             const profileData = JSON.stringify(profile);
 
             session.disconnect();
-            const pageName =
-              req?.url?.split('/').reverse()[0].replace(/\?.*/, '') || 'page';
+
             const filename = `${pageName}-${
-              alreadyRan ? 'host' : 'cold'
+              alreadyRan ? 'hot' : 'cold'
             }-start.cpuprofile`;
             res.setHeader(
               'Content-Disposition',
@@ -114,3 +138,59 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
   });
   return;
 };
+
+const MODULE = require('module');
+
+const REQUIRE_SO_SLOW = Symbol('require-monkey-patch');
+
+function createShim() {
+  const orig = MODULE._load;
+  if (orig[REQUIRE_SO_SLOW]) {
+    return;
+  }
+  MODULE._load = function (request: string) {
+    // eslint-disable-next-line prefer-rest-params
+    const args = arguments;
+    let exports;
+    const start = now();
+    try {
+      exports = orig.apply(this, args);
+    } finally {
+      const end = now();
+      events.push({
+        name: `require ${request}`,
+        ph: 'X',
+        pid: 1,
+        ts: start,
+        dur: end - start,
+      });
+    }
+
+    return exports;
+  };
+  MODULE._load[REQUIRE_SO_SLOW] = true;
+}
+
+type Microseconds = number;
+
+/** @return a high-res timestamp of the current time. */
+function now(): Microseconds {
+  const [sec, nsec] = process.hrtime();
+  return sec * 1e6 + nsec / 1e3;
+}
+
+/**
+ * The type of entries in the Chrome Trace format:
+ * https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/edit
+ * Field names are chosen to match the JSON format.
+ */
+interface Event {
+  name: string;
+  ph: 'B' | 'E' | 'X' | 'C';
+  pid: number; // Required field in the trace viewer, but we don't use it.
+  ts: Microseconds;
+  dur?: Microseconds;
+  args?: { [name: string]: number };
+}
+
+const events: Event[] = [];
