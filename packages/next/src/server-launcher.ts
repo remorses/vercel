@@ -55,7 +55,9 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
       delete require.cache[k];
     }
   }
-  const pageName = req?.url?.replace(/\?.*/, '').split('/').join('-') || 'page';
+  const pageName =
+    req?.url?.replace(/\?.*/, '').split('/').filter(Boolean).join('-') ||
+    'page';
 
   if (req?.url?.includes('vercel-profile-require')) {
     createShim();
@@ -78,6 +80,7 @@ module.exports = async (req: IncomingMessage, res: ServerResponse) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', 'application/json');
     const profileData = JSON.stringify(events);
+    events.length = 0;
     res.end(profileData);
   }
 
@@ -148,7 +151,7 @@ function createShim() {
   if (orig[REQUIRE_SO_SLOW]) {
     return;
   }
-  MODULE._load = function (request: string) {
+  MODULE._load = function _load(request: string) {
     // eslint-disable-next-line prefer-rest-params
     const args = arguments;
     let exports;
@@ -157,6 +160,7 @@ function createShim() {
       exports = orig.apply(this, args);
     } finally {
       const end = now();
+      // const k = path.relative(process.cwd(), parent.filename);
       events.push({
         name: `require ${request}`,
         ph: 'X',
